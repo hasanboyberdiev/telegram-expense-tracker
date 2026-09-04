@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="tg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Назоратчии Буҷет</title>
+    <!-- Пайвастшавӣ ба китобхонаи расмии Telegram -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* Истифодаи рангҳои худи Telegram (Барои Dark/Light Mode худкор кор мекунад) */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--tg-theme-bg-color, #f4f4f9);
+            color: var(--tg-theme-text-color, #222);
+            margin: 0;
+            padding: 20px;
+            transition: background-color 0.3s;
+        }
+        .card {
+            background-color: var(--tg-theme-secondary-bg-color, #ffffff);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        h3 { margin-top: 0; margin-bottom: 15px; font-size: 18px; }
+        
+        /* Дизайни майдонҳои воридкунӣ */
+        input {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 12px;
+            border: 1px solid var(--tg-theme-hint-color, #ddd);
+            border-radius: 10px;
+            box-sizing: border-box;
+            background-color: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            font-size: 16px;
+            outline: none;
+        }
+        input:focus { border-color: var(--tg-theme-button-color, #3390ec); }
+
+        /* Дизайни Тугма */
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #fff);
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.97); }
+        button:disabled { opacity: 0.7; }
+
+        /* Рӯйхати хароҷот */
+        .expense-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--tg-theme-hint-color, #eee);
+        }
+        .expense-item:last-child { border-bottom: none; }
+        .expense-title { font-weight: 500; }
+        .expense-amount { font-weight: bold; color: #e53935; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h3>➕ Иловаи хароҷот</h3>
+        <input type="text" id="title" placeholder="Номи хароҷот (мас: Хӯрок)">
+        <input type="number" id="amount" placeholder="Маблағ (мас: 50)">
+        <button onclick="addExpense()" id="btn-add">Сабт кардан</button>
+    </div>
+
+    <div class="card">
+        <h3>📋 Хароҷотҳои охирин</h3>
+        <div id="expenses-list">
+            <i>⏳ Маълумот боргирӣ мешавад...</i>
+        </div>
+    </div>
+
+    <script>
+        // 1. Оғози Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Кушодани барнома ба пуррагии экран
+
+        // Гирифтани ID-и корбар
+        const userId = tg.initDataUnsafe?.user?.id; 
+
+        // ⚠️ СУРОҒАИ СЕРВЕР (API)
+        // Ҳоло ки бот дар компютери шумост, локалҳостро мемонем.
+        // Вақте ботро ба Alwaysdata гузарондед, ин суроғаро иваз кунед! (мас: https://hasanboy.alwaysdata.net/api)
+        const API_URL = "http://localhost:8100/api"; 
+
+        // 2. Боргирии рӯйхат аз Бот
+        async function loadExpenses() {
+            if (!userId) {
+                document.getElementById('expenses-list').innerHTML = '<i>Хатогӣ: ID-и корбар ёфт нашуд. Танҳо аз Telegram дароед.</i>';
+                return;
+            }
+            try {
+                const res = await fetch(`${API_URL}/expenses?user_id=${userId}`);
+                const data = await res.json();
+                
+                const list = document.getElementById('expenses-list');
+                list.innerHTML = '';
+                
+                if (data.length === 0) {
+                    list.innerHTML = '<i>📭 Ҳоло ягон хароҷот нест.</i>';
+                    return;
+                }
+
+                data.forEach(exp => {
+                    list.innerHTML += `
+                        <div class="expense-item">
+                            <span class="expense-title">${exp.title}</span>
+                            <span class="expense-amount">${exp.amount} смн.</span>
+                        </div>
+                    `;
+                });
+            } catch (error) {
+                document.getElementById('expenses-list').innerHTML = '<i style="color:red;">Хатогӣ! Бот дар компютер фаъол аст?</i>';
+            }
+        }
+
+        // 3. Фиристодани маълумот ба Бот
+        async function addExpense() {
+            const titleInput = document.getElementById('title');
+            const amountInput = document.getElementById('amount');
+            const btn = document.getElementById('btn-add');
+
+            const title = titleInput.value.trim();
+            const amount = parseFloat(amountInput.value);
+
+            if (!title || isNaN(amount)) {
+                tg.showAlert("Лутфан, ном ва маблағро дуруст ворид кунед!");
+                return;
+            }
+
+            btn.innerText = "⏳ Дар ҳоли сабт...";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, title: title, amount: amount })
+                });
+
+                const result = await res.json();
+                if (result.success) {
+                    tg.HapticFeedback.notificationOccurred('success'); // Вибратсия ҳангоми муваффақият
+                    titleInput.value = '';
+                    amountInput.value = '';
+                    loadExpenses(); // Нав кардани рӯйхат
+                }
+            } catch (error) {
+                tg.showAlert("Хатогии сервер! Сервер (API) кор намекунад.");
+            } finally {
+                btn.innerText = "Сабт кардан";
+                btn.disabled = false;
+            }
+        }
+
+        // Оғози кори барнома
+        loadExpenses();
+    </script>
+</body>
+</html>
