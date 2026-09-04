@@ -4,7 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const cron = require('node-cron');
-const { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, AlignmentType, WidthType, HeadingLevel } = require('docx');
+const { Document, Packer, Paragraph, Table, TableCell, TableRow, AlignmentType, WidthType, HeadingLevel } = require('docx');
 require('dotenv').config();
 
 const TOKEN = process.env.BOT_TOKEN;
@@ -37,25 +37,29 @@ db.run(`CREATE TABLE IF NOT EXISTS expenses (
   date TEXT
 )`);
 
-// 3. МЕНЮИ АСОСӢ
-const mainKeyboard = Markup.keyboard([
-  ['📝 Илова кардан', '📋 Рӯйхат'],
-  ['📄 Содирот ба Word'], 
-  [Markup.button.webApp('🌐 Web App -ро кушодан', 'https://malumot.gt.tc/?v=10')]
-]).resize();
+// 3. МЕНЮИ АСОСӢ (Бо фиристодани ID ба Web App)
+function getKeyboard(userId) {
+  return Markup.keyboard([
+    ['📝 Илова кардан', '📋 Рӯйхат'],
+    ['📄 Содирот ба Word'], 
+    [Markup.button.webApp('🌐 Web App -ро кушодан', `https://malumot.gt.tc/?user_id=${userId}`)]
+  ]).resize();
+}
 
 bot.start((ctx) => {
   ctx.session.step = 'none';
-  ctx.reply("✨ Хуш омадед ба Назоратчии Буҷет! Амалро интихоб кунед:", mainKeyboard);
+  ctx.reply("✨ Хуш омадед ба Назоратчии Буҷет! Амалро интихоб кунед:", getKeyboard(ctx.from.id));
 });
 
 // 4. РӮЙХАТ ВА ТУГМАҲО
 bot.hears('📋 Рӯйхат', (ctx) => {
   ctx.session.step = 'none';
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 15", [ctx.from.id], (err, rows) => {
-    if (err || rows.length === 0) return ctx.reply("📭 Рӯйхати шумо холӣ аст.");
-    let txt = "📋 <b>Рӯйхати 15 хароҷоти охирин:</b>\n\n";
+    if (err || rows.length === 0) return ctx.reply("📭 Рӯйхати шумо холӣ аст.", getKeyboard(ctx.from.id));
+    
+    let txt = "📋 <b>Рӯйхати хароҷоти охирин:</b>\n\n";
     rows.forEach(r => txt += `🆔 <b>ID: ${r.id}</b> | ${r.title} - ${r.amount} смн.\n`);
+    
     ctx.reply(txt, { 
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
@@ -87,7 +91,7 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         })
       );
 
-      // Пур кардани маълумот
+      // Маълумот
       rows.forEach((r) => {
         totalSum += r.amount;
         tableRows.push(
@@ -102,7 +106,7 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         );
       });
 
-      // Сатри ҷамъбаст
+      // Сатри Ҷамъи Умумӣ
       tableRows.push(
         new TableRow({
           children: [
@@ -113,27 +117,18 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         })
       );
 
-      // Сохтани ҳуҷҷат
       const doc = new Document({
         sections: [{
           properties: {},
           children: [
-            new Paragraph({
-              text: "ҲИСОБОТИ МУФАССАЛИ ХАРОҶОТ",
-              heading: HeadingLevel.HEADING_2,
-              alignment: AlignmentType.CENTER,
-            }),
-            new Paragraph({ text: "" }), // Сатри холӣ
-            new Table({
-              rows: tableRows,
-              width: { size: 100, type: WidthType.PERCENTAGE },
-            }),
+            new Paragraph({ text: "ҲИСОБОТИ МУФАССАЛИ ХАРОҶОТ", heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER }),
+            new Paragraph({ text: "" }),
+            new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } }),
           ],
         }],
       });
 
       ctx.reply("⏳ Ҳуҷҷати Word омода шуда истодааст...");
-      
       const buffer = await Packer.toBuffer(doc);
       const fileName = `Hisobot_${ctx.from.id}.docx`;
       fs.writeFileSync(fileName, buffer);
@@ -142,7 +137,6 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         { source: fileName, filename: 'Ҳисоботи_Муфассал.docx' },
         { caption: "📄 <b>Ҳуҷҷати шумо омода аст!</b>", parse_mode: 'HTML' }
       );
-      
       fs.unlinkSync(fileName); 
 
     } catch (e) {
@@ -170,7 +164,7 @@ bot.action('action_edit', (ctx) => {
   ctx.reply("✏️ Фақат рақами ID-ро барои таҳрир нависед:");
 });
 
-// 7. ҚАБУЛИ МАТН ВА ИҶРО
+// 7. ҚАБУЛИ МАТН ВА ИҶРОИ АМАЛҲО
 bot.on('text', (ctx) => {
   const text = ctx.message.text;
   const step = ctx.session.step;
@@ -187,9 +181,10 @@ bot.on('text', (ctx) => {
     if (isNaN(amount)) return ctx.reply("❌ Илтимос, фақат рақам нависед:");
     const title = ctx.session.tempTitle;
     const date = new Date().toLocaleDateString('tj-TJ');
+    
     db.run("INSERT INTO expenses (user_id, title, amount, category, date) VALUES (?, ?, ?, ?, ?)",
       [ctx.from.id, title, amount, 'Дигар', date], () => {
-        ctx.reply(`✅ Сабт шуд:\n📌 Ном: ${title}\n💵 Маблағ: ${amount} смн.`);
+        ctx.reply(`✅ Сабт шуд:\n📌 Ном: ${title}\n💵 Маблағ: ${amount} смн.`, getKeyboard(ctx.from.id));
         ctx.session.step = 'none';
     });
   } 
@@ -197,8 +192,8 @@ bot.on('text', (ctx) => {
     const id = parseInt(text);
     if (isNaN(id)) return ctx.reply("❌ Илтимос, рақами ID нависед:");
     db.run("DELETE FROM expenses WHERE id = ? AND user_id = ?", [id, ctx.from.id], function(err) {
-      if (this.changes > 0) ctx.reply(`✅ Хароҷоти ID ${id} нест карда шуд.`);
-      else ctx.reply("⚠️ Чунин ID ёфт нашуд.");
+      if (this.changes > 0) ctx.reply(`✅ Хароҷоти ID ${id} нест карда шуд.`, getKeyboard(ctx.from.id));
+      else ctx.reply("⚠️ Чунин ID ёфт нашуд.", getKeyboard(ctx.from.id));
       ctx.session.step = 'none';
     });
   } 
@@ -221,13 +216,13 @@ bot.on('text', (ctx) => {
     const newTitle = ctx.session.editTitle;
     db.run("UPDATE expenses SET title = ?, amount = ? WHERE id = ? AND user_id = ?", 
       [newTitle, amount, id, ctx.from.id], function(err) {
-        if (this.changes > 0) ctx.reply(`✅ ID ${id} нав карда шуд.`);
-        else ctx.reply("⚠️ Чунин ID ёфт нашуд.");
+        if (this.changes > 0) ctx.reply(`✅ ID ${id} нав карда шуд.`, getKeyboard(ctx.from.id));
+        else ctx.reply("⚠️ Чунин ID ёфт нашуд.", getKeyboard(ctx.from.id));
         ctx.session.step = 'none';
     });
   }
   else {
-    ctx.reply("💡 Лутфан аз меню амалро интихоб кунед.");
+    ctx.reply("💡 Лутфан аз меню амалро интихоб кунед.", getKeyboard(ctx.from.id));
   }
 });
 
@@ -239,7 +234,7 @@ cron.schedule('0 20 * * *', () => {
 });
 
 app.get('/api/expenses', (req, res) => {
-  db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC", [req.query.user_id], (err, rows) => res.json(rows || []));
+  db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 20", [req.query.user_id], (err, rows) => res.json(rows || []));
 });
 
 app.post('/api/add', (req, res) => {
@@ -252,10 +247,8 @@ app.post('/api/add', (req, res) => {
 });
 
 const PORT = process.env.PORT || 8100;
-app.listen(PORT, () => {
-  console.log(`🌐 API Server дар порти ${PORT} фаъол шуд.`);
-  bot.launch().then(() => console.log(`✅ БОТ БО СОДИРОТ БА WORD ФАЪОЛ ШУД!`));
-});
+app.listen(PORT, () => console.log(`🌐 API Server дар порти ${PORT} фаъол шуд.`));
+bot.launch().then(() => console.log(`✅ БОТ БЕ ХАТО ФАЪОЛ ШУД!`));
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
