@@ -36,11 +36,12 @@ db.run(`CREATE TABLE IF NOT EXISTS expenses (
   date TEXT
 )`);
 
+// МЕНЮИ АСОСӢ (Бе тугмаи Омор)
 function getKeyboard(userId) {
   const noCache = Date.now(); 
   return Markup.keyboard([
     ['📝 Илова кардан', '📋 Рӯйхат'],
-    ['📊 Омор', '📄 Содирот ба Word'], 
+    ['📄 Содирот ба Word'], 
     [Markup.button.webApp('🌐 Web App -ро кушодан', `https://shaxsi.alwaysdata.net/?v=${noCache}&user_id=${userId}`)]
   ]).resize();
 }
@@ -125,31 +126,6 @@ bot.hears('📄 Содирот ба Word', async (ctx) => {
   await sendWordDocument(ctx.from.id);
 });
 
-// ОМОРИ МОҲОНА
-bot.hears('📊 Омор', (ctx) => {
-  ctx.session.step = 'none';
-  const today = new Date();
-  const monthStr = today.toLocaleDateString('tj-TJ').substring(3); // Формати MM.YYYY -ро мегирад
-
-  db.all("SELECT category, SUM(amount) as total FROM expenses WHERE user_id = ? AND date LIKE ? GROUP BY category ORDER BY total DESC", 
-    [ctx.from.id, `%${monthStr}%`], (err, rows) => {
-      
-    if (err || rows.length === 0) return ctx.reply("📭 Дар ин моҳ ҳоло хароҷот сабт нашудааст.");
-
-    let totalMonth = 0;
-    let txt = `📊 <b>Омори моҳи ҷорӣ (${monthStr}):</b>\n\n`;
-
-    rows.forEach((r, index) => {
-      totalMonth += r.total;
-      if (index === 0) txt += `🏆 <b>Бештар аз ҳама:</b> ${r.category} - ${r.total} смн.\n\n`;
-      else txt += `🔸 ${r.category}: ${r.total} смн.\n`;
-    });
-
-    txt += `\n💰 <b>ҶАМЪИ ХАРОҶОТ: ${totalMonth} смн.</b>`;
-    ctx.reply(txt, { parse_mode: 'HTML', ...getKeyboard(ctx.from.id) });
-  });
-});
-
 bot.hears('📋 Рӯйхат', (ctx) => {
   ctx.session.step = 'none';
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 15", [ctx.from.id], (err, rows) => {
@@ -157,7 +133,7 @@ bot.hears('📋 Рӯйхат', (ctx) => {
     
     let txt = "📋 <b>Рӯйхати хароҷоти охирин:</b>\n\n";
     rows.forEach(r => txt += `🆔 <b>ID: ${r.id}</b> | ${r.title} - ${r.amount} смн.\n`);
-    ctx.reply(txt, { parse_mode: 'HTML' }); // Тугмаҳои таҳрири бот гирифта шуданд, чунки Web App беҳтар аст
+    ctx.reply(txt, { parse_mode: 'HTML' }); 
   });
 });
 
@@ -168,7 +144,7 @@ bot.hears('📝 Илова кардан', (ctx) => {
 
 bot.on('text', (ctx) => {
   const text = ctx.message.text;
-  if (['📋 Рӯйхат', '📝 Илова кардан', '📄 Содирот ба Word', '📊 Омор'].includes(text)) return;
+  if (['📋 Рӯйхат', '📝 Илова кардан', '📄 Содирот ба Word'].includes(text)) return;
 
   if (ctx.session.step === 'add_title') {
     ctx.session.tempTitle = text.trim();
@@ -190,7 +166,7 @@ bot.on('text', (ctx) => {
   }
 });
 
-// API-ҲО БАРОИ ВЕБСАЙТ (Илова, Таҳрир, Нест кардан, Word)
+// API-ҲО БАРОИ ВЕБСАЙТ
 app.get('/api/expenses', (req, res) => {
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 20", [req.query.user_id], (err, rows) => res.json(rows || []));
 });
