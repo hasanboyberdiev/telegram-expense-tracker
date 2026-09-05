@@ -1,12 +1,9 @@
 const { Telegraf, Markup, session } = require('telegraf');
 const sqlite3 = require('sqlite3').verbose();
-const express = require('express');
-const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
-const cron = require('node-cron');
 const { Document, Packer, Paragraph, Table, TableCell, TableRow, AlignmentType, WidthType, HeadingLevel } = require('docx');
 require('dotenv').config();
+const express = require('express'); 
 
 const TOKEN = process.env.BOT_TOKEN;
 if (!TOKEN) {
@@ -21,11 +18,6 @@ bot.use((ctx, next) => {
     return next();
 });
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
 const db = new sqlite3.Database('./database.db');
 db.run(`CREATE TABLE IF NOT EXISTS expenses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,22 +28,19 @@ db.run(`CREATE TABLE IF NOT EXISTS expenses (
   date TEXT
 )`);
 
-// МЕНЮИ АСОСӢ (Бе тугмаи Омор)
-function getKeyboard(userId) {
-  const noCache = Date.now(); 
+// МЕНЮИ АСОСӢ (Тугмаи Web App тоза карда шуд)
+function getKeyboard() {
   return Markup.keyboard([
     ['📝 Илова кардан', '📋 Рӯйхат'],
-    ['📄 Содирот ба Word'], 
-    [Markup.button.webApp('🌐 Web App -ро кушодан', `https://shaxsi.alwaysdata.net/?v=${noCache}&user_id=${userId}`)]
+    ['📄 Содирот ба Word']
   ]).resize();
 }
 
 bot.start((ctx) => {
   ctx.session.step = 'none';
-  ctx.reply("✨ Хуш омадед ба Назоратчии Буҷет! Амалро интихоб кунед:", getKeyboard(ctx.from.id));
+  ctx.reply("✨ Хуш омадед ба Назоратчии Буҷет! Амалро интихоб кунед:", getKeyboard());
 });
 
-// ФУНКСИЯИ УМУМӢ БАРОИ СОДИРОТ БА WORD
 async function sendWordDocument(userId) {
   return new Promise((resolve) => {
     db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC", [userId], async (err, rows) => {
@@ -129,7 +118,7 @@ bot.hears('📄 Содирот ба Word', async (ctx) => {
 bot.hears('📋 Рӯйхат', (ctx) => {
   ctx.session.step = 'none';
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 15", [ctx.from.id], (err, rows) => {
-    if (err || rows.length === 0) return ctx.reply("📭 Рӯйхати шумо холӣ аст.", getKeyboard(ctx.from.id));
+    if (err || rows.length === 0) return ctx.reply("📭 Рӯйхати шумо холӣ аст.", getKeyboard());
     
     let txt = "📋 <b>Рӯйхати хароҷоти охирин:</b>\n\n";
     rows.forEach(r => txt += `🆔 <b>ID: ${r.id}</b> | ${r.title} - ${r.amount} смн.\n`);
@@ -158,50 +147,21 @@ bot.on('text', (ctx) => {
     const date = new Date().toLocaleDateString('tj-TJ');
     db.run("INSERT INTO expenses (user_id, title, amount, category, date) VALUES (?, ?, ?, ?, ?)",
       [ctx.from.id, ctx.session.tempTitle, amount, 'Дигар', date], () => {
-        ctx.reply(`✅ Сабт шуд: ${ctx.session.tempTitle} - ${amount} смн.`, getKeyboard(ctx.from.id));
+        ctx.reply(`✅ Сабт шуд: ${ctx.session.tempTitle} - ${amount} смн.`, getKeyboard());
         ctx.session.step = 'none';
     });
   } else {
-    ctx.reply("💡 Лутфан аз меню амалро интихоб кунед.", getKeyboard(ctx.from.id));
+    ctx.reply("💡 Лутфан аз меню амалро интихоб кунед.", getKeyboard());
   }
 });
 
-// API-ҲО БАРОИ ВЕБСАЙТ
-app.get('/api/expenses', (req, res) => {
-  db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 20", [req.query.user_id], (err, rows) => res.json(rows || []));
-});
-
-app.post('/api/add', (req, res) => {
-  const { user_id, title, amount } = req.body;
-  const date = new Date().toLocaleDateString('tj-TJ');
-  db.run("INSERT INTO expenses (user_id, title, amount, category, date) VALUES (?, ?, ?, ?, ?)", [user_id, title, amount, 'Дигар', date], function() {
-      res.json({ success: true });
-  });
-});
-
-app.put('/api/edit', (req, res) => {
-  const { id, user_id, title, amount } = req.body;
-  db.run("UPDATE expenses SET title = ?, amount = ? WHERE id = ? AND user_id = ?", [title, amount, id, user_id], function() {
-      res.json({ success: this.changes > 0 });
-  });
-});
-
-app.delete('/api/delete', (req, res) => {
-  const { id, user_id } = req.body;
-  db.run("DELETE FROM expenses WHERE id = ? AND user_id = ?", [id, user_id], function() {
-      res.json({ success: this.changes > 0 });
-  });
-});
-
-app.post('/api/export', async (req, res) => {
-  const { user_id } = req.body;
-  await sendWordDocument(user_id);
-  res.json({ success: true });
-});
-
+// Сервери хурд танҳо барои банд кардани порт дар Alwaysdata, то ки хатогӣ надиҳад
+const app = express();
+app.get('/', (req, res) => res.send('Бот фаъол аст!'));
 const PORT = process.env.PORT || 8100;
-app.listen(PORT, () => console.log(`🌐 API Server дар порти ${PORT} фаъол шуд.`));
-bot.launch().then(() => console.log(`✅ БОТ ВА ВЕБСАЙТ ФАЪОЛ ШУДАНД!`));
+app.listen(PORT, () => console.log(`🌐 Порти ${PORT} барои Alwaysdata банд карда шуд.`));
+
+bot.launch().then(() => console.log(`✅ БОТ ФАЪОЛ ШУД!`));
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
