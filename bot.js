@@ -7,15 +7,15 @@ const cron = require('node-cron');
 const { Document, Packer, Paragraph, Table, TableCell, TableRow, AlignmentType, WidthType, HeadingLevel } = require('docx');
 require('dotenv').config();
 
+// 1. САНҶИШИ ТОКЕН
 const TOKEN = process.env.BOT_TOKEN;
 if (!TOKEN) {
   console.error("❌ Хатогӣ: BOT_TOKEN ёфт нашуд!");
   process.exit(1);
 }
-
 const bot = new Telegraf(TOKEN);
 
-// 1. ХОТИРА ВА СЕРВЕР
+// 2. ХОТИРАИ БОТ ВА СЕРВЕРИ API
 bot.use(session());
 bot.use((ctx, next) => {
     ctx.session = ctx.session || { step: 'none' };
@@ -26,7 +26,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 2. БАЗАИ МАЪЛУМОТ
+// 3. БАЗАИ МАЪЛУМОТ (SQLite)
 const db = new sqlite3.Database('./database.db');
 db.run(`CREATE TABLE IF NOT EXISTS expenses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,12 +37,13 @@ db.run(`CREATE TABLE IF NOT EXISTS expenses (
   date TEXT
 )`);
 
-// 3. МЕНЮИ АСОСӢ (Бо фиристодани ID ба Web App)
+// 4. МЕНЮИ АСОСӢ (Бо ҳалли мушкили Кеш)
 function getKeyboard(userId) {
+  const noCache = Date.now(); // Барои он ки Telegram ҳамеша сайти навро кушояд
   return Markup.keyboard([
     ['📝 Илова кардан', '📋 Рӯйхат'],
     ['📄 Содирот ба Word'], 
-    [Markup.button.webApp('🌐 Web App -ро кушодан', `https://malumot.gt.tc/?user_id=${userId}`)]
+    [Markup.button.webApp('🌐 Web App -ро кушодан', `https://malumot.gt.tc/?v=${noCache}&user_id=${userId}`)]
   ]).resize();
 }
 
@@ -51,7 +52,7 @@ bot.start((ctx) => {
   ctx.reply("✨ Хуш омадед ба Назоратчии Буҷет! Амалро интихоб кунед:", getKeyboard(ctx.from.id));
 });
 
-// 4. РӮЙХАТ ВА ТУГМАҲО
+// 5. РӮЙХАТ ВА ТУГМАҲОИ ТАҲРИР
 bot.hears('📋 Рӯйхат', (ctx) => {
   ctx.session.step = 'none';
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 15", [ctx.from.id], (err, rows) => {
@@ -69,7 +70,7 @@ bot.hears('📋 Рӯйхат', (ctx) => {
   });
 });
 
-// 5. СОДИРОТ БА WORD
+// 6. СОДИРОТ БА WORD
 bot.hears('📄 Содирот ба Word', (ctx) => {
   ctx.session.step = 'none';
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC", [ctx.from.id], async (err, rows) => {
@@ -79,7 +80,7 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
       let totalSum = 0;
       const tableRows = [];
 
-      // Сарлавҳаи ҷадвал
+      // Сарлавҳаи ҷадвали Word
       tableRows.push(
         new TableRow({
           children: [
@@ -91,7 +92,7 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         })
       );
 
-      // Маълумот
+      // Пур кардани маълумоти ҷадвал
       rows.forEach((r) => {
         totalSum += r.amount;
         tableRows.push(
@@ -106,7 +107,7 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         );
       });
 
-      // Сатри Ҷамъи Умумӣ
+      // Сатри ҷамъбаст
       tableRows.push(
         new TableRow({
           children: [
@@ -117,9 +118,9 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         })
       );
 
+      // Сохтани ҳуҷҷат
       const doc = new Document({
         sections: [{
-          properties: {},
           children: [
             new Paragraph({ text: "ҲИСОБОТИ МУФАССАЛИ ХАРОҶОТ", heading: HeadingLevel.HEADING_2, alignment: AlignmentType.CENTER }),
             new Paragraph({ text: "" }),
@@ -146,7 +147,7 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
   });
 });
 
-// 6. САРШАВИИ ҚАДАМҲО
+// 7. САРШАВИИ ҚАДАМҲО БАРОИ МАЪЛУМОТ
 bot.hears('📝 Илова кардан', (ctx) => {
   ctx.session.step = 'add_title';
   ctx.reply("📝 Лутфан, **номи амалиёт**-ро нависед:", { parse_mode: 'Markdown' });
@@ -164,7 +165,7 @@ bot.action('action_edit', (ctx) => {
   ctx.reply("✏️ Фақат рақами ID-ро барои таҳрир нависед:");
 });
 
-// 7. ҚАБУЛИ МАТН ВА ИҶРОИ АМАЛҲО
+// 8. ҚАБУЛИ МАТН ВА ИҶРОИ АМАЛҲО (Илова, Нест, Таҳрир)
 bot.on('text', (ctx) => {
   const text = ctx.message.text;
   const step = ctx.session.step;
@@ -179,6 +180,7 @@ bot.on('text', (ctx) => {
   else if (step === 'add_amount') {
     const amount = parseFloat(text);
     if (isNaN(amount)) return ctx.reply("❌ Илтимос, фақат рақам нависед:");
+    
     const title = ctx.session.tempTitle;
     const date = new Date().toLocaleDateString('tj-TJ');
     
@@ -191,6 +193,7 @@ bot.on('text', (ctx) => {
   else if (step === 'delete') {
     const id = parseInt(text);
     if (isNaN(id)) return ctx.reply("❌ Илтимос, рақами ID нависед:");
+    
     db.run("DELETE FROM expenses WHERE id = ? AND user_id = ?", [id, ctx.from.id], function(err) {
       if (this.changes > 0) ctx.reply(`✅ Хароҷоти ID ${id} нест карда шуд.`, getKeyboard(ctx.from.id));
       else ctx.reply("⚠️ Чунин ID ёфт нашуд.", getKeyboard(ctx.from.id));
@@ -212,11 +215,10 @@ bot.on('text', (ctx) => {
   else if (step === 'edit_amount') {
     const amount = parseFloat(text);
     if (isNaN(amount)) return ctx.reply("❌ Илтимос, фақат рақам нависед:");
-    const id = ctx.session.editId;
-    const newTitle = ctx.session.editTitle;
+    
     db.run("UPDATE expenses SET title = ?, amount = ? WHERE id = ? AND user_id = ?", 
-      [newTitle, amount, id, ctx.from.id], function(err) {
-        if (this.changes > 0) ctx.reply(`✅ ID ${id} нав карда шуд.`, getKeyboard(ctx.from.id));
+      [ctx.session.editTitle, amount, ctx.session.editId, ctx.from.id], function(err) {
+        if (this.changes > 0) ctx.reply(`✅ ID ${ctx.session.editId} нав карда шуд.`, getKeyboard(ctx.from.id));
         else ctx.reply("⚠️ Чунин ID ёфт нашуд.", getKeyboard(ctx.from.id));
         ctx.session.step = 'none';
     });
@@ -226,13 +228,7 @@ bot.on('text', (ctx) => {
   }
 });
 
-// 8. ЁДРАСКУНӢ ВА API
-cron.schedule('0 20 * * *', () => {
-  db.all("SELECT DISTINCT user_id FROM expenses", [], (err, rows) => {
-    if (rows) rows.forEach(row => bot.telegram.sendMessage(row.user_id, "🔔 Ёдраскунӣ: Оё имрӯз хароҷот доштед?").catch(() => {}));
-  });
-});
-
+// 9. API СЕРВЕР БАРОИ ВЕБСАЙТ (Web App)
 app.get('/api/expenses', (req, res) => {
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 20", [req.query.user_id], (err, rows) => res.json(rows || []));
 });
@@ -246,6 +242,7 @@ app.post('/api/add', (req, res) => {
   });
 });
 
+// 10. ОҒОЗИ КОРИ СЕРВЕР ВА БОТ
 const PORT = process.env.PORT || 8100;
 app.listen(PORT, () => console.log(`🌐 API Server дар порти ${PORT} фаъол шуд.`));
 bot.launch().then(() => console.log(`✅ БОТ БЕ ХАТО ФАЪОЛ ШУД!`));
