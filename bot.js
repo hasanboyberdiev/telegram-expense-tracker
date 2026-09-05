@@ -3,6 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
+const path = require('path');
 const cron = require('node-cron');
 const { Document, Packer, Paragraph, Table, TableCell, TableRow, AlignmentType, WidthType, HeadingLevel } = require('docx');
 require('dotenv').config();
@@ -26,6 +27,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ПАЙВАСТ КАРДАНИ ВЕБСАЙТ БА СЕРВЕР (Папкаи public)
+app.use(express.static(path.join(__dirname, 'public')));
+
 // 3. БАЗАИ МАЪЛУМОТ (SQLite)
 const db = new sqlite3.Database('./database.db');
 db.run(`CREATE TABLE IF NOT EXISTS expenses (
@@ -37,13 +41,14 @@ db.run(`CREATE TABLE IF NOT EXISTS expenses (
   date TEXT
 )`);
 
-// 4. МЕНЮИ АСОСӢ (Бо ҳалли мушкили Кеш)
+// 4. МЕНЮИ АСОСӢ (Бо суроғаи Alwaysdata)
 function getKeyboard(userId) {
-  const noCache = Date.now(); // Барои он ки Telegram ҳамеша сайти навро кушояд
+  const noCache = Date.now(); 
+  // ЭЗОҲ: Агар логини шумо дар Alwaysdata 'shaxsi' набошад, онро иваз кунед!
   return Markup.keyboard([
     ['📝 Илова кардан', '📋 Рӯйхат'],
     ['📄 Содирот ба Word'], 
-    [Markup.button.webApp('🌐 Web App -ро кушодан', `https://malumot.gt.tc/?v=${noCache}&user_id=${userId}`)]
+    [Markup.button.webApp('🌐 Web App -ро кушодан', `https://shaxsi.alwaysdata.net/?v=${noCache}&user_id=${userId}`)]
   ]).resize();
 }
 
@@ -80,7 +85,6 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
       let totalSum = 0;
       const tableRows = [];
 
-      // Сарлавҳаи ҷадвали Word
       tableRows.push(
         new TableRow({
           children: [
@@ -92,7 +96,6 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         })
       );
 
-      // Пур кардани маълумоти ҷадвал
       rows.forEach((r) => {
         totalSum += r.amount;
         tableRows.push(
@@ -107,7 +110,6 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         );
       });
 
-      // Сатри ҷамъбаст
       tableRows.push(
         new TableRow({
           children: [
@@ -118,7 +120,6 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
         })
       );
 
-      // Сохтани ҳуҷҷат
       const doc = new Document({
         sections: [{
           children: [
@@ -147,7 +148,7 @@ bot.hears('📄 Содирот ба Word', (ctx) => {
   });
 });
 
-// 7. САРШАВИИ ҚАДАМҲО БАРОИ МАЪЛУМОТ
+// 7. САРШАВИИ ҚАДАМҲО
 bot.hears('📝 Илова кардан', (ctx) => {
   ctx.session.step = 'add_title';
   ctx.reply("📝 Лутфан, **номи амалиёт**-ро нависед:", { parse_mode: 'Markdown' });
@@ -165,7 +166,7 @@ bot.action('action_edit', (ctx) => {
   ctx.reply("✏️ Фақат рақами ID-ро барои таҳрир нависед:");
 });
 
-// 8. ҚАБУЛИ МАТН ВА ИҶРОИ АМАЛҲО (Илова, Нест, Таҳрир)
+// 8. ҚАБУЛИ МАТН ВА ИҶРОИ АМАЛҲО
 bot.on('text', (ctx) => {
   const text = ctx.message.text;
   const step = ctx.session.step;
@@ -228,7 +229,7 @@ bot.on('text', (ctx) => {
   }
 });
 
-// 9. API СЕРВЕР БАРОИ ВЕБСАЙТ (Web App)
+// 9. API СЕРВЕР 
 app.get('/api/expenses', (req, res) => {
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 20", [req.query.user_id], (err, rows) => res.json(rows || []));
 });
@@ -245,7 +246,7 @@ app.post('/api/add', (req, res) => {
 // 10. ОҒОЗИ КОРИ СЕРВЕР ВА БОТ
 const PORT = process.env.PORT || 8100;
 app.listen(PORT, () => console.log(`🌐 API Server дар порти ${PORT} фаъол шуд.`));
-bot.launch().then(() => console.log(`✅ БОТ БЕ ХАТО ФАЪОЛ ШУД!`));
+bot.launch().then(() => console.log(`✅ БОТ ВА ВЕБСАЙТ БЕ ХАТО ФАЪОЛ ШУДАНД!`));
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
