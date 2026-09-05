@@ -10,153 +10,171 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: var(--tg-theme-bg-color, #f4f4f9);
             color: var(--tg-theme-text-color, #222);
-            margin: 0;
-            padding: 20px;
-            transition: background-color 0.3s;
+            margin: 0; padding: 15px;
         }
         .card {
             background-color: var(--tg-theme-secondary-bg-color, #ffffff);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            border-radius: 12px; padding: 15px; margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
         h3 { margin-top: 0; margin-bottom: 15px; font-size: 18px; }
         
         input {
-            width: 100%;
-            padding: 14px;
-            margin-bottom: 12px;
+            width: 100%; padding: 12px; margin-bottom: 10px;
             border: 1px solid var(--tg-theme-hint-color, #ddd);
-            border-radius: 10px;
-            box-sizing: border-box;
+            border-radius: 8px; box-sizing: border-box;
             background-color: var(--tg-theme-bg-color, #fff);
-            color: var(--tg-theme-text-color, #000);
-            font-size: 16px;
-            outline: none;
+            color: var(--tg-theme-text-color, #000); font-size: 16px; outline: none;
         }
-        input:focus { border-color: var(--tg-theme-button-color, #3390ec); }
-
-        button {
-            width: 100%;
-            padding: 14px;
+        button.primary-btn {
+            width: 100%; padding: 14px;
             background-color: var(--tg-theme-button-color, #3390ec);
             color: var(--tg-theme-button-text-color, #fff);
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: transform 0.1s;
+            border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;
         }
-        button:active { transform: scale(0.97); }
-        button:disabled { opacity: 0.7; }
-
+        button.export-btn {
+            width: 100%; padding: 12px; margin-bottom: 15px;
+            background-color: #2b579a; color: white;
+            border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;
+        }
         .expense-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid var(--tg-theme-hint-color, #eee);
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0; border-bottom: 1px solid var(--tg-theme-hint-color, #eee);
         }
-        .expense-item:last-child { border-bottom: none; }
-        .expense-title { font-weight: 500; }
-        .expense-amount { font-weight: bold; color: #e53935; }
+        .expense-info { flex-grow: 1; }
+        .expense-title { font-weight: 600; }
+        .expense-amount { color: #e53935; font-size: 14px; margin-top: 4px; }
+        .action-btns { display: flex; gap: 8px; }
+        .icon-btn {
+            background: none; border: none; font-size: 18px; cursor: pointer;
+            padding: 5px; border-radius: 5px; background-color: var(--tg-theme-bg-color, #f4f4f9);
+        }
     </style>
 </head>
 <body>
 
+    <button onclick="requestWordExport()" class="export-btn" id="btn-export">📄 Содирот ба Word (ба бот меояд)</button>
+
     <div class="card">
-        <h3>➕ Иловаи хароҷот</h3>
+        <h3 id="form-title">➕ Иловаи хароҷот</h3>
         <input type="text" id="title" placeholder="Номи хароҷот (мас: Хӯрок)">
         <input type="number" id="amount" placeholder="Маблағ (мас: 50)">
-        <button onclick="addExpense()" id="btn-add">Сабт кардан</button>
+        <button onclick="saveExpense()" class="primary-btn" id="btn-add">Сабт кардан</button>
     </div>
 
     <div class="card">
         <h3>📋 Хароҷотҳои охирин</h3>
-        <div id="expenses-list">
-            <i>⏳ Маълумот боргирӣ мешавад...</i>
-        </div>
+        <div id="expenses-list"><i>⏳ Маълумот боргирӣ мешавад...</i></div>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand(); 
-
         const urlParams = new URLSearchParams(window.location.search);
         const userId = tg.initDataUnsafe?.user?.id || urlParams.get('user_id'); 
-
-        // СУРОҒАИ НАВ: Дигар ба суроғаи пурра эҳтиёҷ нест, зеро API ва Сайт дар як ҷоянд!
         const API_URL = "/api"; 
+        
+        let editingId = null;
 
         async function loadExpenses() {
-            if (!userId) {
-                document.getElementById('expenses-list').innerHTML = '<i style="color:red;">Хатогӣ: ID-и корбар ёфт нашуд. Фармони /start -ро дар бот пахш кунед.</i>';
-                return;
-            }
+            if (!userId) return;
             try {
                 const res = await fetch(`${API_URL}/expenses?user_id=${userId}`);
                 const data = await res.json();
-                
                 const list = document.getElementById('expenses-list');
                 list.innerHTML = '';
                 
-                if (data.length === 0) {
-                    list.innerHTML = '<i>📭 Ҳоло ягон хароҷот нест.</i>';
-                    return;
-                }
+                if (data.length === 0) { list.innerHTML = '<i>📭 Ҳоло ягон хароҷот нест.</i>'; return; }
 
                 data.forEach(exp => {
                     list.innerHTML += `
                         <div class="expense-item">
-                            <span class="expense-title">${exp.title}</span>
-                            <span class="expense-amount">${exp.amount} смн.</span>
+                            <div class="expense-info">
+                                <div class="expense-title">${exp.title}</div>
+                                <div class="expense-amount">${exp.amount} смн.</div>
+                            </div>
+                            <div class="action-btns">
+                                <button class="icon-btn" onclick="startEdit(${exp.id}, '${exp.title}', ${exp.amount})">✏️</button>
+                                <button class="icon-btn" onclick="deleteExpense(${exp.id})">❌</button>
+                            </div>
                         </div>
                     `;
                 });
-            } catch (error) {
-                document.getElementById('expenses-list').innerHTML = '<i style="color:red;">Хатогии пайвастшавӣ ба API.</i>';
-            }
+            } catch (e) { console.error(e); }
         }
 
-        async function addExpense() {
-            if (!userId) return tg.showAlert("Хатогӣ: ID-и шумо ёфт нашуд.");
-
-            const titleInput = document.getElementById('title');
-            const amountInput = document.getElementById('amount');
+        async function saveExpense() {
+            const title = document.getElementById('title').value.trim();
+            const amount = parseFloat(document.getElementById('amount').value);
             const btn = document.getElementById('btn-add');
 
-            const title = titleInput.value.trim();
-            const amount = parseFloat(amountInput.value);
-
-            if (!title || isNaN(amount)) {
-                tg.showAlert("Лутфан, ном ва маблағро дуруст ворид кунед!");
-                return;
-            }
+            if (!title || isNaN(amount)) return tg.showAlert("Лутфан, маълумотро дуруст ворид кунед!");
 
             btn.innerText = "⏳ Дар ҳоли сабт...";
             btn.disabled = true;
 
             try {
-                const res = await fetch(`${API_URL}/add`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: userId, title: title, amount: amount })
-                });
+                if (editingId) {
+                    await fetch(`${API_URL}/edit`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: editingId, user_id: userId, title, amount })
+                    });
+                    editingId = null;
+                    document.getElementById('form-title').innerText = "➕ Иловаи хароҷот";
+                    btn.style.backgroundColor = "var(--tg-theme-button-color, #3390ec)";
+                } else {
+                    await fetch(`${API_URL}/add`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: userId, title, amount })
+                    });
+                }
+                
+                tg.HapticFeedback.notificationOccurred('success');
+                document.getElementById('title').value = '';
+                document.getElementById('amount').value = '';
+                loadExpenses();
+            } catch (e) { tg.showAlert("Хатогии сервер."); } 
+            finally { btn.innerText = "Сабт кардан"; btn.disabled = false; }
+        }
 
-                const result = await res.json();
-                if (result.success) {
-                    tg.HapticFeedback.notificationOccurred('success');
-                    titleInput.value = '';
-                    amountInput.value = '';
+        function startEdit(id, title, amount) {
+            editingId = id;
+            document.getElementById('title').value = title;
+            document.getElementById('amount').value = amount;
+            document.getElementById('form-title').innerText = "✏️ Таҳрири хароҷот";
+            
+            const btn = document.getElementById('btn-add');
+            btn.innerText = "💾 Таҳрирро сабт кардан";
+            btn.style.backgroundColor = "#4caf50";
+            window.scrollTo(0, 0); // Экранро ба боло мебарад
+        }
+
+        async function deleteExpense(id) {
+            tg.showConfirm("Шумо мутмаин ҳастед, ки ин хароҷотро нест мекунед?", async (confirm) => {
+                if (confirm) {
+                    await fetch(`${API_URL}/delete`, {
+                        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id, user_id: userId })
+                    });
+                    tg.HapticFeedback.impactOccurred('medium');
                     loadExpenses();
                 }
-            } catch (error) {
-                tg.showAlert("Хатогии пайвастшавӣ ба API.");
-            } finally {
-                btn.innerText = "Сабт кардан";
-                btn.disabled = false;
-            }
+            });
+        }
+
+        async function requestWordExport() {
+            tg.HapticFeedback.impactOccurred('heavy');
+            const btn = document.getElementById('btn-export');
+            btn.innerText = "⏳ Омода шуда истодааст...";
+            
+            try {
+                await fetch(`${API_URL}/export`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId })
+                });
+                tg.showAlert("✅ Ҳуҷҷати Word ба чати бот фиристода шуд! Метавонед онҷо боргирӣ кунед.");
+            } catch (e) { tg.showAlert("❌ Хатогӣ ҳангоми содирот."); } 
+            finally { btn.innerText = "📄 Содирот ба Word (ба бот меояд)"; }
         }
 
         loadExpenses();
