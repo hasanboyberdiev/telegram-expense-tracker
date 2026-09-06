@@ -28,10 +28,11 @@ db.run(`CREATE TABLE IF NOT EXISTS expenses (
   date TEXT
 )`);
 
-// МЕНЮИ АСОСӢ (Тугмаи Web App тоза карда шуд)
+// МЕНЮИ АСОСӢ БО ТУГМАҲОИ НАВ
 function getKeyboard() {
   return Markup.keyboard([
     ['📝 Илова кардан', '📋 Рӯйхат'],
+    ['✏️ Таҳрир', '❌ Нест кардан'],
     ['📄 Содирот ба Word']
   ]).resize();
 }
@@ -131,9 +132,19 @@ bot.hears('📝 Илова кардан', (ctx) => {
   ctx.reply("📝 Лутфан, **номи амалиёт**-ро нависед:", { parse_mode: 'Markdown' });
 });
 
+bot.hears('❌ Нест кардан', (ctx) => {
+  ctx.session.step = 'delete_id';
+  ctx.reply("❌ Лутфан, **рақами ID**-и хароҷотро нависед (метавонед аз 📋 Рӯйхат бинед):", { parse_mode: 'Markdown' });
+});
+
+bot.hears('✏️ Таҳрир', (ctx) => {
+  ctx.session.step = 'edit_id';
+  ctx.reply("✏️ Лутфан, **рақами ID**-и хароҷотро барои таҳрир нависед:", { parse_mode: 'Markdown' });
+});
+
 bot.on('text', (ctx) => {
   const text = ctx.message.text;
-  if (['📋 Рӯйхат', '📝 Илова кардан', '📄 Содирот ба Word'].includes(text)) return;
+  if (['📋 Рӯйхат', '📝 Илова кардан', '📄 Содирот ба Word', '❌ Нест кардан', '✏️ Таҳрир'].includes(text)) return;
 
   if (ctx.session.step === 'add_title') {
     ctx.session.tempTitle = text.trim();
@@ -150,12 +161,49 @@ bot.on('text', (ctx) => {
         ctx.reply(`✅ Сабт шуд: ${ctx.session.tempTitle} - ${amount} смн.`, getKeyboard());
         ctx.session.step = 'none';
     });
-  } else {
+  } 
+  else if (ctx.session.step === 'delete_id') {
+    const id = parseInt(text);
+    if (isNaN(id)) return ctx.reply("❌ Илтимос, танҳо рақам нависед.");
+    db.run("DELETE FROM expenses WHERE id = ? AND user_id = ?", [id, ctx.from.id], function() {
+        if (this.changes > 0) ctx.reply(`✅ Хароҷоти рақами ${id} нест карда шуд.`, getKeyboard());
+        else ctx.reply("❌ Чунин ID ёфт нашуд.", getKeyboard());
+        ctx.session.step = 'none';
+    });
+  }
+  else if (ctx.session.step === 'edit_id') {
+    const id = parseInt(text);
+    if (isNaN(id)) return ctx.reply("❌ Илтимос, танҳо рақам нависед.");
+    db.get("SELECT * FROM expenses WHERE id = ? AND user_id = ?", [id, ctx.from.id], (err, row) => {
+        if (!row) {
+            ctx.session.step = 'none';
+            return ctx.reply("❌ Чунин ID ёфт нашуд.", getKeyboard());
+        }
+        ctx.session.editId = id;
+        ctx.session.step = 'edit_title';
+        ctx.reply(`Номи кунунӣ: ${row.title}\n✏️ **Номи навро** нависед:`, { parse_mode: 'Markdown' });
+    });
+  }
+  else if (ctx.session.step === 'edit_title') {
+    ctx.session.tempTitle = text.trim();
+    ctx.session.step = 'edit_amount';
+    ctx.reply("💰 Акнун **маблағи навро** нависед (бо рақам):", { parse_mode: 'Markdown' });
+  }
+  else if (ctx.session.step === 'edit_amount') {
+    const amount = parseFloat(text);
+    if (isNaN(amount)) return ctx.reply("❌ Илтимос, фақат рақам нависед:");
+    db.run("UPDATE expenses SET title = ?, amount = ? WHERE id = ? AND user_id = ?",
+       [ctx.session.tempTitle, amount, ctx.session.editId, ctx.from.id], function() {
+       ctx.reply(`✅ Хароҷот бо муваффақият таҳрир карда шуд!`, getKeyboard());
+       ctx.session.step = 'none';
+    });
+  } 
+  else {
     ctx.reply("💡 Лутфан аз меню амалро интихоб кунед.", getKeyboard());
   }
 });
 
-// Сервери хурд танҳо барои банд кардани порт дар Alwaysdata, то ки хатогӣ надиҳад
+// Сервери хурд танҳо барои Alwaysdata
 const app = express();
 app.get('/', (req, res) => res.send('Бот фаъол аст!'));
 const PORT = process.env.PORT || 8100;
