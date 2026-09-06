@@ -28,11 +28,10 @@ db.run(`CREATE TABLE IF NOT EXISTS expenses (
   date TEXT
 )`);
 
-// МЕНЮИ АСОСӢ БО ТУГМАҲОИ НАВ
+// МЕНЮИ АСОСӢ (Фақат 3 тугмаи тоза)
 function getKeyboard() {
   return Markup.keyboard([
     ['📝 Илова кардан', '📋 Рӯйхат'],
-    ['✏️ Таҳрир', '❌ Нест кардан'],
     ['📄 Содирот ба Word']
   ]).resize();
 }
@@ -116,6 +115,7 @@ bot.hears('📄 Содирот ба Word', async (ctx) => {
   await sendWordDocument(ctx.from.id);
 });
 
+// ҚИСМАТИ РӮЙХАТ БО ТУГМАҲОИ ДОХИЛӢ (INLINE KEYBOARD)
 bot.hears('📋 Рӯйхат', (ctx) => {
   ctx.session.step = 'none';
   db.all("SELECT * FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT 15", [ctx.from.id], (err, rows) => {
@@ -123,8 +123,28 @@ bot.hears('📋 Рӯйхат', (ctx) => {
     
     let txt = "📋 <b>Рӯйхати хароҷоти охирин:</b>\n\n";
     rows.forEach(r => txt += `🆔 <b>ID: ${r.id}</b> | ${r.title} - ${r.amount} смн.\n`);
-    ctx.reply(txt, { parse_mode: 'HTML' }); 
+    
+    // Сохтани тугмаҳои зери хабар
+    const inlineKeyboard = Markup.inlineKeyboard([
+      Markup.button.callback('✏️ Таҳрир', 'action_edit'),
+      Markup.button.callback('❌ Нест кардан', 'action_delete')
+    ]);
+
+    ctx.reply(txt, { parse_mode: 'HTML', ...inlineKeyboard }); 
   });
+});
+
+// АМАЛИЁТИ ТУГМАҲОИ ДОХИЛӢ
+bot.action('action_edit', (ctx) => {
+  ctx.session.step = 'edit_id';
+  ctx.reply("✏️ Лутфан, **рақами ID**-и хароҷотро барои таҳрир нависед:", { parse_mode: 'Markdown' });
+  ctx.answerCbQuery();
+});
+
+bot.action('action_delete', (ctx) => {
+  ctx.session.step = 'delete_id';
+  ctx.reply("❌ Лутфан, **рақами ID**-и хароҷотро нависед (метавонед аз рӯйхат бинед):", { parse_mode: 'Markdown' });
+  ctx.answerCbQuery();
 });
 
 bot.hears('📝 Илова кардан', (ctx) => {
@@ -132,19 +152,9 @@ bot.hears('📝 Илова кардан', (ctx) => {
   ctx.reply("📝 Лутфан, **номи амалиёт**-ро нависед:", { parse_mode: 'Markdown' });
 });
 
-bot.hears('❌ Нест кардан', (ctx) => {
-  ctx.session.step = 'delete_id';
-  ctx.reply("❌ Лутфан, **рақами ID**-и хароҷотро нависед (метавонед аз 📋 Рӯйхат бинед):", { parse_mode: 'Markdown' });
-});
-
-bot.hears('✏️ Таҳрир', (ctx) => {
-  ctx.session.step = 'edit_id';
-  ctx.reply("✏️ Лутфан, **рақами ID**-и хароҷотро барои таҳрир нависед:", { parse_mode: 'Markdown' });
-});
-
 bot.on('text', (ctx) => {
   const text = ctx.message.text;
-  if (['📋 Рӯйхат', '📝 Илова кардан', '📄 Содирот ба Word', '❌ Нест кардан', '✏️ Таҳрир'].includes(text)) return;
+  if (['📋 Рӯйхат', '📝 Илова кардан', '📄 Содирот ба Word'].includes(text)) return;
 
   if (ctx.session.step === 'add_title') {
     ctx.session.tempTitle = text.trim();
@@ -203,7 +213,7 @@ bot.on('text', (ctx) => {
   }
 });
 
-// Сервери хурд танҳо барои Alwaysdata
+// Сервери хурд
 const app = express();
 app.get('/', (req, res) => res.send('Бот фаъол аст!'));
 const PORT = process.env.PORT || 8100;
